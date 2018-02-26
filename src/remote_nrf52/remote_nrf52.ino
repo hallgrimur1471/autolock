@@ -1,6 +1,8 @@
 #include <bluefruit.h>
+#include "car.h"
 
 #define CONNECTION_TIMEOUT (2000) // ms
+#define TOGGLE_GRACETIME (3000) // ms
 
 // Custom UUID used to differentiate this device.
 // Use any online UUID generator to generate a valid UUID.
@@ -13,15 +15,16 @@ const uint8_t CUSTOM_UUID[] =
     0xE7, 0x11, 0x8F, 0x71, 0x1A, 0xFF, 0x67, 0xDF
 };
 
-/* struct with info about detected ble device */
-typedef struct ble_device
+/* struct with info about detected packet */
+typedef struct packet_t
 {
   uint8_t addr[6]; // six byte device address
   int8_t rssi; // RSSI value in [dBm]
   int32_t timestamp;
 };
 
-ble_device car;
+packet_t packet;
+Car car;
 
 int32_t last_message_time = 0;
 int32_t time_since_last_message = 0;
@@ -70,36 +73,33 @@ void setup() {
 
 // loop has to be defined because feather is Arduino based
 void loop() {
+  time_since_last_message = millis() - last_message_time;
+
   if (car.isLocked()) {
-    // when should we open?
+    //Serial.println("Locked");
+    //Serial.printf("Time since last message: %d\n", time_since_last_message);
+    if (time_since_last_message < CONNECTION_TIMEOUT &&
+        car.get_time_since_toggle() > TOGGLE_GRACETIME) {
+      car.unlock();
+    }
   }
   else { // car is unlocked
-    if (time_since_last_message > CONNECTION_TIMEOUT &&
+    //Serial.println("Unlocked");
+    if (time_since_last_message >= CONNECTION_TIMEOUT &&
         car.get_time_since_toggle() > TOGGLE_GRACETIME) {
       car.lock();
     }
   }
-
-
-  time_since_last_message = millis() - last_message_time;
-  if (time_since_last_message > CONNECTION_TIMEOUT) {
-    maybeLockCar();
-    ledOff(LED_RED);
-  }
-  else {
-    ledOn(LED_RED);
-  }
-  //Serial.printf("%d\n", time_since_last_message);
+  //delay(200);
 }
 
 void scan_callback(ble_gap_evt_adv_report_t* report) {
 
-  // add report data to our car struct
-  memcpy(car.addr, report->peer_addr.addr, 6);
-  car.rssi = report->rssi;
-  car.timestamp = millis(); // (approximately)
-  last_message_time = car.timestamp;
+  // add report data to our packet struct
+  memcpy(packet.addr, report->peer_addr.addr, 6);
+  packet.rssi = report->rssi;
+  packet.timestamp = millis(); // (approximately)
+  last_message_time = packet.timestamp;
 
-  Serial.printf("%d,%d\n", car.timestamp, car.rssi);
-
+  Serial.printf("%d,%d\n", packet.timestamp, packet.rssi);
 }
